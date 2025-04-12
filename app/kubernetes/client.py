@@ -41,6 +41,11 @@ class DeploymentStatus(BaseModel):
     unavailable_replicas: Optional[int] = None
     status: str  # "active" or "failed"
     conditions: List[Dict[str, Any]] = []
+    # Resource usage metrics
+    cpu_usage: Optional[str] = None
+    memory_usage: Optional[str] = None
+    # Store the deployment's selector labels for pod metrics queries
+    selector_labels: Dict[str, str] = {}
 
 
 class GameInstance(BaseModel):
@@ -93,13 +98,118 @@ class KubernetesClient:
         if self._custom_objects_api is None:
             self._custom_objects_api = client.CustomObjectsApi(api_client=self.api_client)
         return self._custom_objects_api
+        
+    def _parse_cpu_metrics(self, cpu_str: str) -> float:
+        """Parse CPU metrics string to millicores."""
+        if not cpu_str:
+            return 0
+        if cpu_str.endswith('m'):
+            return float(cpu_str[:-1])
+        # Handle "n" suffix (nanocores)
+        if cpu_str.endswith('n'):
+            return float(cpu_str[:-1]) / 1_000_000
+        # Regular cores
+        return float(cpu_str) * 1000
 
-    async def get_deployments(self, namespace: Optional[str] = None) -> List[DeploymentStatus]:
-        """Get all game server deployments from the Kubernetes API.
+    def _parse_memory_metrics(self, memory_str: str) -> int:
+        """Parse memory metrics string to bytes."""
+        if not memory_str:
+            return 0
+        
+        # Handle Ki, Mi, Gi, etc.
+        units = {'Ki': 2**10, 'Mi': 2**20, 'Gi': 2**30, 'Ti': 2**40}
+        for suffix, multiplier in units.items():
+            if memory_str.endswith(suffix):
+                return int(float(memory_str[:-2]) * multiplier)
+        
+        # Handle K, M, G, etc.
+        units = {'K': 10**3, 'M': 10**6, 'G': 10**9, 'T': 10**12}
+        for suffix, multiplier in units.items():
+            if memory_str.endswith(suffix):
+                return int(float(memory_str[:-1]) * multiplier)
+        
+        # Handle raw bytes
+        return int(memory_str)
 
+    def _format_cpu(self, millicores: float) -> str:
+        """Format CPU millicores for display."""
+        if millicores >= 1000:
+            return f"{millicores/1000:.2f} cores"
+        return f"{int(millicores)}m"
+
+    def _format_memory(self, bytes_val: int) -> str:
+        """Format memory bytes for display."""
+        if bytes_val >= 2**30:
+            return f"{bytes_val/2**30:.2f}Gi"
+        if bytes_val >= 2**20:
+            return f"{bytes_val/2**20:.2f}Mi"
+        if bytes_val >= 2**10:
+            return f"{bytes_val/2**10:.2f}Ki"
+        return f"{bytes_val}B"
+        
+    async def get_pod_metrics(self, namespace: str, label_selector: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch pod metrics from the metrics API.
+        
+        Args:
+            namespace: Namespace to query
+            label_selector: Optional label selector to filter pods
+            
+        Returns:
+            Dictionary mapping pod names to their metrics
+        """
+        try:
+            # Try to access the metrics API
+            result = self.custom_objects_api.list_namespaced_custom_object(
+                group="metrics.k8s.io",
+                version="v1beta1",
+                namespace=namespace,
+                plural="pods",
+                label_selector=label_selector
+            )
+            
+            metrics = {}
+            for item in result.get("items", []):
+                pod_name = item["metadata"]["name"]
+                containers = item.get("containers", [])
+                
+                total_cpu = 0
+                total_memory = 0
+                
+                for container in containers:
+                    usage = container.get("usage", {})
+                    # Parse CPU (comes in formats like "100m" or "1")
+                    cpu_str = usage.get("cpu", "0")
+                    cpu_value = self._parse_cpu_metrics(cpu_str)
+                    total_cpu += cpu_value
+                    
+                    # Parse memory (comes in formats like "100Ki" or "1Gi")
+                    memory_str = usage.get("memory", "0")
+                    memory_value = self._parse_memory_metrics(memory_str)
+                    total_memory += memory_value
+                
+                metrics[pod_name] = {
+                    "cpu": self._format_cpu(total_cpu),
+                    "memory": self._format_memory(total_memory),
+                    "cpu_raw": total_cpu,
+                    "memory_raw": total_memory
+                }
+                
+            return metrics
+        except ApiException as e:
+            if e.status == 404:
+                logger.warning("Metrics API not available in the cluster")
+                return {}
+            logger.error(f"Error fetching pod metrics: {e}")
+            return {}
+
+    async def _fetch_deployments(self, namespace: Optional[str] = None) -> List[DeploymentStatus]:
+        """Get all game server deployments from the Kubernetes API without metrics.
+        
+        This is a helper method to get deployment data.
+        
         Args:
             namespace: Optional namespace to filter deployments
-
+            
         Returns:
             List of deployment status objects
         """
@@ -150,6 +260,11 @@ class KubernetesClient:
                             if condition.last_transition_time else None,
                         })
                 
+                # Store the selector for fetching pod metrics
+                selector_labels = {}
+                if item.spec.selector and item.spec.selector.match_labels:
+                    selector_labels = item.spec.selector.match_labels
+                
                 deployments.append(
                     DeploymentStatus(
                         name=item.metadata.name,
@@ -162,9 +277,77 @@ class KubernetesClient:
                         unavailable_replicas=unavailable_replicas,
                         status=status,
                         conditions=conditions,
+                        selector_labels=selector_labels
                     )
                 )
             
+            return deployments
+        except ApiException as e:
+            logger.error(f"Error retrieving deployments: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error retrieving deployments: {str(e)}",
+            )
+    async def get_deployments(self, namespace: Optional[str] = None) -> List[DeploymentStatus]:
+        """Get all game server deployments from the Kubernetes API and enrich with metrics.
+
+        Args:
+            namespace: Optional namespace to filter deployments
+
+        Returns:
+            List of deployment status objects with metrics
+        """
+        try:
+            deployments = await self._fetch_deployments(namespace)
+            
+            # Fetch metrics for each deployment
+            for deployment in deployments:
+                try:
+                    # Get labels for this deployment's pods
+                    label_selectors = []
+                    
+                    # Use the deployment's selector labels
+                    if deployment.selector_labels:
+                        for key, value in deployment.selector_labels.items():
+                            label_selectors.append(f"{key}={value}")
+                        print(f"DEBUG: Using selector labels for {deployment.namespace}/{deployment.name}: {label_selectors}")
+                    else:
+                        # Fallback to app=name if no selector available
+                        app_label = f"app={deployment.name}"
+                        label_selectors.append(app_label)
+                        print(f"DEBUG: Using fallback selector '{app_label}' for {deployment.namespace}/{deployment.name}")
+                    
+                    label_selector = ",".join(label_selectors)
+                    
+                    # Fetch pod metrics for this deployment
+                    pod_metrics = await self.get_pod_metrics(
+                        namespace=deployment.namespace,
+                        label_selector=label_selector
+                    )
+                    
+                    # Log if we found any metrics
+                    if pod_metrics:
+                        print(f"DEBUG: Found metrics for {len(pod_metrics)} pods in {deployment.namespace}/{deployment.name}")
+                    else:
+                        print(f"DEBUG: No pod metrics found for {deployment.namespace}/{deployment.name} with selector {label_selector}")
+                    
+                    if pod_metrics:
+                        # Aggregate metrics across all pods
+                        total_cpu = sum(m["cpu_raw"] for m in pod_metrics.values())
+                        total_memory = sum(m["memory_raw"] for m in pod_metrics.values())
+                        
+                        # Add to deployment
+                        deployment.cpu_usage = self._format_cpu(total_cpu)
+                        deployment.memory_usage = self._format_memory(total_memory)
+                    else:
+                        # No metrics available
+                        deployment.cpu_usage = "N/A"
+                        deployment.memory_usage = "N/A"
+                except Exception as e:
+                    logger.error(f"Error fetching metrics for deployment {deployment.namespace}/{deployment.name}: {e}")
+                    deployment.cpu_usage = "Error"
+                    deployment.memory_usage = "Error"
+                    
             return deployments
         except ApiException as e:
             logger.error(f"Error retrieving deployments: {e}")

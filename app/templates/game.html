@@ -31,6 +31,7 @@
                         <th>Namespace</th>
                         <th>Replicas</th>
                         <th>Status</th>
+                        <th>Resources</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -91,6 +92,17 @@
                                 </div>
                             </div>
                             {% endif %}
+                        </td>
+                        <td>
+                            <div class="resource-usage">
+                                <span title="CPU Usage" class="resource-item">
+                                    <i class="bi bi-cpu"></i> {{ component.cpu_usage or 'N/A' }}
+                                </span>
+                                <br>
+                                <span title="Memory Usage" class="resource-item">
+                                    <i class="bi bi-memory"></i> {{ component.memory_usage or 'N/A' }}
+                                </span>
+                            </div>
                         </td>
                         <td>
                             <div class="btn-group" role="group">

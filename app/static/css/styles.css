@@ -133,6 +133,54 @@ body {
     white-space: pre-wrap;
 }
 
+/* Resource usage styling */
+.resource-usage {
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.resource-item {
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.resource-item i {
+    margin-right: 3px;
+    color: #6c757d;
+}
+
+/* Adjust table column widths for resources column */
+.table th:nth-child(5), 
+.table td:nth-child(5) {
+    width: 15%;
+}
+
+.table th:nth-child(6), 
+.table td:nth-child(6) {
+    width: 15%;
+}
+
+/* Reduce width of other columns to make room for resources */
+.table th:nth-child(1), 
+.table td:nth-child(1) {
+    width: 18%;
+}
+
+.table th:nth-child(2), 
+.table td:nth-child(2) {
+    width: 18%;
+}
+
+.table th:nth-child(3), 
+.table td:nth-child(3) {
+    width: 12%;
+}
+
+.table th:nth-child(4), 
+.table td:nth-child(4) {
+    width: 22%;
+}
+
 /* Footer styling */
 footer {
     font-size: 0.9rem;
