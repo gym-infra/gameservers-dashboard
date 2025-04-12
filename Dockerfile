@@ -23,7 +23,7 @@ RUN curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl" \
 RUN pip install --no-cache-dir uv
 
 # Copy dependency files
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 
 # Install Python dependencies
 RUN uv sync
