@@ -66,6 +66,56 @@ body {
     background-color: #f8f9fa;
 }
 
+/* Fix for conditions display to prevent table layout changes */
+.conditions-container {
+    position: relative;
+}
+
+.conditions-collapse {
+    position: fixed;
+    width: 400px;
+    z-index: 1050;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+/* Ensure the conditions card stands out visually */
+.conditions-collapse .card {
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    background-color: #fff;
+}
+
+/* Style for conditions popup header */
+.conditions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+
+.conditions-header h6 {
+    margin: 0;
+    font-weight: 600;
+}
+
+/* Close button for conditions popup */
+.conditions-close {
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0;
+}
+
+.conditions-close:hover {
+    color: #343a40;
+}
+
 /* Footer styling */
 footer {
     font-size: 0.9rem;
