@@ -115,6 +115,15 @@
                                         {% if component.replicas == 0 %}disabled{% endif %}>
                                     <i class="bi bi-stop-fill"></i>
                                 </button>
+                                <button class="btn btn-sm btn-secondary view-logs" 
+                                        data-namespace="{{ component.namespace }}" 
+                                        data-name="{{ component.name }}"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#logsModal"
+                                        title="View Logs"
+                                        {% if component.replicas == 0 %}disabled{% endif %}>
+                                    <i class="bi bi-terminal"></i>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -131,6 +140,33 @@
     <p>No deployments with game-server/game={{ game_name }} annotation were found.</p>
 </div>
 {% endif %}
+<!-- Logs Modal -->
+<div class="modal fade" id="logsModal" tabindex="-1" aria-labelledby="logsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="logsModalLabel">Container Logs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <select id="podSelector" class="form-select">
+                        <option selected>Loading pods...</option>
+                    </select>
+                </div>
+                <div class="logs-container">
+                    <pre id="logsContent" class="logs">Loading logs...</pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="refreshLogs">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -281,6 +317,119 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+    
+    // Logs modal handling
+    const logsModal = document.getElementById('logsModal');
+    const podSelector = document.getElementById('podSelector');
+    const logsContent = document.getElementById('logsContent');
+    const refreshLogsButton = document.getElementById('refreshLogs');
+    
+    let currentNamespace = null;
+    let currentDeployment = null;
+    let currentPod = null;
+    
+    // Handle view logs button clicks
+    document.querySelectorAll('.view-logs').forEach(button => {
+        button.addEventListener('click', function() {
+            currentNamespace = this.getAttribute('data-namespace');
+            currentDeployment = this.getAttribute('data-name');
+            
+            // Update modal title
+            document.getElementById('logsModalLabel').textContent = 
+                `Logs: ${currentDeployment} (${currentNamespace})`;
+            
+            // Reset pod selector and logs content
+            podSelector.innerHTML = '<option selected>Loading pods...</option>';
+            logsContent.textContent = 'Loading pods...';
+            
+            // Fetch pods for this deployment
+            fetchPods(currentNamespace, currentDeployment);
+        });
+    });
+    
+    // Handle pod selection change
+    podSelector.addEventListener('change', function() {
+        if (this.value) {
+            currentPod = this.value;
+            fetchLogs(currentNamespace, currentPod);
+        }
+    });
+    
+    // Handle refresh logs button
+    refreshLogsButton.addEventListener('click', function() {
+        if (currentNamespace && currentPod) {
+            fetchLogs(currentNamespace, currentPod);
+        }
+    });
+    
+    // Function to fetch pods for a deployment
+    async function fetchPods(namespace, deployment) {
+        try {
+            const response = await fetch(`/api/deployments/${namespace}/${deployment}/pods`);
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch pods');
+            }
+            
+            const pods = await response.json();
+            
+            // Clear pod selector
+            podSelector.innerHTML = '';
+            
+            if (pods.length === 0) {
+                podSelector.innerHTML = '<option>No pods found</option>';
+                logsContent.textContent = 'No pods found for this deployment.';
+                return;
+            }
+            
+            // Add pods to selector
+            pods.forEach(pod => {
+                const option = document.createElement('option');
+                option.value = pod.name;
+                option.textContent = `${pod.name} (${pod.status})`;
+                podSelector.appendChild(option);
+            });
+            
+            // Select the first pod and fetch its logs
+            currentPod = pods[0].name;
+            fetchLogs(namespace, currentPod);
+            
+        } catch (error) {
+            console.error('Error fetching pods:', error);
+            podSelector.innerHTML = '<option>Failed to load pods</option>';
+            logsContent.textContent = `Error: ${error.message}`;
+        }
+    }
+    
+    // Function to fetch logs for a pod
+    async function fetchLogs(namespace, podName) {
+        logsContent.textContent = 'Loading logs...';
+        
+        try {
+            const response = await fetch(`/api/pods/${namespace}/${podName}/logs?tail_lines=200`);
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch logs');
+            }
+            
+            const data = await response.json();
+            
+            // Display logs
+            if (data.logs && data.logs.trim()) {
+                logsContent.textContent = data.logs;
+            } else {
+                logsContent.textContent = 'No logs available.';
+            }
+            
+            // Scroll to bottom of logs
+            const logsContainer = document.querySelector('.logs-container');
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+            
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+            logsContent.textContent = `Error: ${error.message}`;
+        }
+    }
 });
 </script>
 {% endblock %}

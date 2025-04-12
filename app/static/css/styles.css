@@ -116,6 +116,23 @@ body {
     color: #343a40;
 }
 
+/* Logs modal styling */
+.logs-container {
+    max-height: 500px;
+    overflow-y: auto;
+    background-color: #212529;
+    border-radius: 0.25rem;
+}
+
+.logs {
+    color: #f8f9fa;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.875rem;
+    padding: 1rem;
+    margin-bottom: 0;
+    white-space: pre-wrap;
+}
+
 /* Footer styling */
 footer {
     font-size: 0.9rem;

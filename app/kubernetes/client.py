@@ -334,6 +334,109 @@ class KubernetesClient:
                 status_code=500,
                 detail=f"Error restarting deployment: {str(e)}",
             )
+            
+    async def get_deployment_pods(self, namespace: str, name: str) -> List[Dict[str, Any]]:
+        """Get pods for a specific deployment.
+        
+        Args:
+            namespace: Namespace of the deployment
+            name: Name of the deployment
+            
+        Returns:
+            List of pods belonging to the deployment
+        """
+        try:
+            # First get the deployment to check its selector
+            deployment = self.apps_v1_api.read_namespaced_deployment(
+                name=name,
+                namespace=namespace
+            )
+            
+            # Extract label selector from the deployment
+            selectors = []
+            for key, value in deployment.spec.selector.match_labels.items():
+                selectors.append(f"{key}={value}")
+                
+            label_selector = ",".join(selectors)
+            
+            # Get pods with this label selector
+            pods = self.core_v1_api.list_namespaced_pod(
+                namespace=namespace,
+                label_selector=label_selector
+            )
+            
+            result = []
+            for pod in pods.items:
+                # Extract container information
+                containers = []
+                for container in pod.spec.containers:
+                    containers.append({
+                        "name": container.name,
+                        "image": container.image
+                    })
+                
+                # Determine pod status and age
+                status = "Unknown"
+                if pod.status.phase:
+                    status = pod.status.phase
+                
+                # For running pods, check if all containers are ready
+                if status == "Running":
+                    if pod.status.container_statuses:
+                        all_ready = all(cs.ready for cs in pod.status.container_statuses)
+                        if not all_ready:
+                            status = "NotReady"
+                
+                # Get creation timestamp
+                created_at = pod.metadata.creation_timestamp
+                
+                result.append({
+                    "name": pod.metadata.name,
+                    "namespace": pod.metadata.namespace,
+                    "status": status,
+                    "created_at": created_at.isoformat() if created_at else None,
+                    "containers": containers
+                })
+                
+            # Sort by creation time (newest first)
+            result.sort(key=lambda p: p.get("created_at", ""), reverse=True)
+            return result
+            
+        except ApiException as e:
+            logger.error(f"Error getting pods for deployment: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error getting pods for deployment: {str(e)}",
+            )
+            
+    async def get_pod_logs(self, namespace: str, pod_name: str, container: Optional[str] = None, 
+                         tail_lines: int = 100) -> str:
+        """Get logs from a specific pod container.
+        
+        Args:
+            namespace: Namespace of the pod
+            pod_name: Name of the pod
+            container: Optional container name (if not provided, logs from the first container)
+            tail_lines: Number of lines to fetch from the end of the logs
+            
+        Returns:
+            Pod logs as a string
+        """
+        try:
+            logs = self.core_v1_api.read_namespaced_pod_log(
+                name=pod_name,
+                namespace=namespace,
+                container=container,
+                tail_lines=tail_lines
+            )
+            
+            return logs
+        except ApiException as e:
+            logger.error(f"Error getting pod logs: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error getting pod logs: {str(e)}",
+            )
 
 
 def get_k8s_client_config(authorization_header: Optional[str] = None) -> ApiClient:

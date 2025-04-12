@@ -1,7 +1,7 @@
 """
 API router for the Game Server Dashboard application.
 """
-from typing import List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel
@@ -17,6 +17,22 @@ class DeploymentActionResponse(BaseModel):
 
     status: str
     message: str
+
+
+class PodInfo(BaseModel):
+    """Model for pod information."""
+    
+    name: str
+    namespace: str
+    status: str
+    created_at: Optional[str] = None
+    containers: List[Dict[str, str]]
+
+
+class PodLogResponse(BaseModel):
+    """Response model for pod logs endpoint."""
+    
+    logs: str
 
 
 @router.get(
@@ -125,3 +141,47 @@ async def get_game_instances(
     """
     k8s_client = await get_k8s_client(request)
     return await k8s_client.get_game_instances(game_name=game_name)
+
+
+@router.get(
+    "/deployments/{namespace}/{name}/pods",
+    response_model=List[PodInfo],
+    summary="Get pods for a deployment",
+)
+async def get_deployment_pods(
+    request: Request,
+    namespace: str = Path(..., description="Namespace of the deployment"),
+    name: str = Path(..., description="Name of the deployment"),
+):
+    """Get all pods for a specific deployment.
+
+    Returns a list of all pods managed by the deployment sorted by creation time (newest first).
+    """
+    k8s_client = await get_k8s_client(request)
+    return await k8s_client.get_deployment_pods(namespace=namespace, name=name)
+
+
+@router.get(
+    "/pods/{namespace}/{name}/logs",
+    response_model=PodLogResponse,
+    summary="Get logs from a pod",
+)
+async def get_pod_logs(
+    request: Request,
+    namespace: str = Path(..., description="Namespace of the pod"),
+    name: str = Path(..., description="Name of the pod"),
+    container: str = Query(None, description="Container name (if not provided, logs from first container)"),
+    tail_lines: int = Query(100, description="Number of lines to fetch from the end of the logs"),
+):
+    """Get logs from a pod container.
+
+    Returns the container logs as a text string.
+    """
+    k8s_client = await get_k8s_client(request)
+    logs = await k8s_client.get_pod_logs(
+        namespace=namespace, 
+        pod_name=name,
+        container=container,
+        tail_lines=tail_lines
+    )
+    return PodLogResponse(logs=logs)
