@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Games - Game Server Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1>Games Overview</h1>
+        <p class="lead">Manage your game server deployments</p>
+    </div>
+</div>
+
+{% if games %}
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+    {% for game in games %}
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">{{ game.name }}</h5>
+                {% if game.failing_deployments > 0 %}
+                <span class="badge bg-danger">{{ game.failing_deployments }} failing</span>
+                {% else %}
+                <span class="badge bg-success">Healthy</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Instances:</span>
+                    <strong>{{ game.instance_count }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <span>Components:</span>
+                    <strong>{{ game.component_count }}</strong>
+                </div>
+                <a href="/game/{{ game.name }}" class="btn btn-primary w-100">View Details</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+    <h4 class="alert-heading">No game servers found!</h4>
+    <p>No deployments with game-server annotations were found. Make sure your deployments have the following annotations:</p>
+    <ul>
+        <li><code>game-server/game</code>: The name of the game</li>
+        <li><code>game-server/instance</code>: The instance identifier</li>
+        <li><code>game-server/component</code>: The component name</li>
+    </ul>
+</div>
+{% endif %}
+{% endblock %}

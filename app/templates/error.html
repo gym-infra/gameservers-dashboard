@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Error - Game Server Dashboard{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0">{{ error_title|default("An error occurred") }}</h4>
+            </div>
+            <div class="card-body">
+                <p class="card-text">{{ error_message }}</p>
+                <hr>
+                <p class="mb-0">Please check your Kubernetes configuration and try again.</p>
+                <div class="mt-3">
+                    <a href="/" class="btn btn-primary">Return to Dashboard</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

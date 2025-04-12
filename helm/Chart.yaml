@@ -1,0 +1,14 @@
+apiVersion: v2
+name: servers-dashboard
+description: A web dashboard for managing game server deployments in Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - game-servers
+  - kubernetes
+  - dashboard
+maintainers:
+  - name: DevOps Team
+sources:
+  - https://github.com/example/servers-dashboard

@@ -1,0 +1,79 @@
+/* Custom styles for Game Server Dashboard */
+
+/* Global styles */
+body {
+    background-color: #f8f9fa;
+}
+
+/* Card hover effect */
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    transition: box-shadow 0.3s ease-in-out;
+}
+
+/* Status badges */
+.badge {
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+/* Table customization */
+.table-responsive {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Fix for table column widths to prevent jitter when expanding conditions */
+.table {
+    table-layout: fixed;
+}
+
+/* Define column widths */
+.table th:nth-child(1), 
+.table td:nth-child(1) {
+    width: 20%;
+}
+.table th:nth-child(2), 
+.table td:nth-child(2) {
+    width: 20%;
+}
+.table th:nth-child(3), 
+.table td:nth-child(3) {
+    width: 15%;
+}
+.table th:nth-child(4), 
+.table td:nth-child(4) {
+    width: 30%;
+}
+.table th:nth-child(5), 
+.table td:nth-child(5) {
+    width: 15%;
+}
+
+/* Ensure content doesn't overflow cells */
+.table td {
+    word-wrap: break-word;
+}
+
+/* Custom card styles */
+.card-header {
+    font-weight: 500;
+    background-color: #f8f9fa;
+}
+
+/* Condition details styling */
+.collapse .card {
+    background-color: #f8f9fa;
+}
+
+/* Footer styling */
+footer {
+    font-size: 0.9rem;
+}
+
+/* Loading spinner */
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+    border-width: 0.2em;
+}

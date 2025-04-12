@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}{{ game_name }} - Game Server Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Games</a></li>
+                <li class="breadcrumb-item active">{{ game_name }}</li>
+            </ol>
+        </nav>
+        <h1>{{ game_name }}</h1>
+        <p class="lead">Game server instances and components</p>
+    </div>
+</div>
+
+{% if instances %}
+{% for instance in instances %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h4>Instance: {{ instance.name }}</h4>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Component</th>
+                        <th>Namespace</th>
+                        <th>Replicas</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for component in instance.components %}
+                    <tr>
+                        <td>{{ component.component }}</td>
+                        <td>{{ component.namespace }}</td>
+                        <td>
+                            <span class="text-muted">{{ component.available_replicas or 0 }}/{{ component.replicas }}</span>
+                            {% if component.replicas > 0 and component.available_replicas == 0 %}
+                            <span class="ms-2 badge bg-danger">Failed</span>
+                            {% elif component.replicas > 0 and component.available_replicas < component.replicas %}
+                            <span class="ms-2 badge bg-warning">Scaling</span>
+                            {% elif component.replicas == 0 %}
+                            <span class="ms-2 badge bg-secondary">Stopped</span>
+                            {% else %}
+                            <span class="ms-2 badge bg-success">Ready</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div>
+                                {% if component.status == "active" %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-danger">Failed</span>
+                                {% endif %}
+                            </div>
+                            {% if component.conditions %}
+                            <button class="btn btn-sm btn-link p-0 mt-1" 
+                                    type="button" 
+                                    data-bs-toggle="collapse" 
+                                    data-bs-target="#conditions-{{ component.namespace }}-{{ component.name }}" 
+                                    aria-expanded="false">
+                                View conditions
+                            </button>
+                            <div class="collapse mt-2" id="conditions-{{ component.namespace }}-{{ component.name }}">
+                                <div class="card card-body p-2">
+                                    <ul class="list-unstyled mb-0 small">
+                                    {% for condition in component.conditions %}
+                                        <li class="mb-1">
+                                            <div><strong>{{ condition.type }}</strong>: {{ condition.status }}</div>
+                                            {% if condition.message %}
+                                            <div class="text-muted">{{ condition.message }}</div>
+                                            {% endif %}
+                                        </li>
+                                    {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm btn-success start-deployment" 
+                                        data-namespace="{{ component.namespace }}" 
+                                        data-name="{{ component.name }}"
+                                        title="Start"
+                                        {% if component.replicas > 0 %}disabled{% endif %}>
+                                    <i class="bi bi-play-fill"></i>
+                                </button>
+                                <button class="btn btn-sm btn-primary restart-deployment" 
+                                        data-namespace="{{ component.namespace }}" 
+                                        data-name="{{ component.name }}"
+                                        title="Restart"
+                                        {% if component.replicas == 0 %}disabled{% endif %}>
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger stop-deployment" 
+                                        data-namespace="{{ component.namespace }}" 
+                                        data-name="{{ component.name }}"
+                                        title="Stop"
+                                        {% if component.replicas == 0 %}disabled{% endif %}>
+                                    <i class="bi bi-stop-fill"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="alert alert-info">
+    <h4 class="alert-heading">No instances found for {{ game_name }}!</h4>
+    <p>No deployments with game-server/game={{ game_name }} annotation were found.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle restart buttons
+    document.querySelectorAll('.restart-deployment').forEach(button => {
+        button.addEventListener('click', async function() {
+            const namespace = this.getAttribute('data-namespace');
+            const name = this.getAttribute('data-name');
+            
+            if (!confirm(`Are you sure you want to restart the deployment ${namespace}/${name}?`)) {
+                return;
+            }
+            
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Restarting...';
+            
+            try {
+                const response = await fetch(`/api/deployments/${namespace}/${name}/restart`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert('Deployment restart initiated successfully!');
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    alert(`Error: ${result.detail || 'Unknown error'}`);
+                    this.disabled = false;
+                    this.textContent = 'Restart';
+                }
+            } catch (error) {
+                alert(`Failed to restart deployment: ${error.message}`);
+                this.disabled = false;
+                this.textContent = 'Restart';
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
