@@ -3,7 +3,9 @@
 Game Server Deployments Management Dashboard
 Main application module that initializes FastAPI and serves the web application.
 """
+import logging
 import os
+import sys
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -13,6 +15,15 @@ from fastapi.templating import Jinja2Templates
 
 from app.api import router as api_router
 from app.kubernetes import get_k8s_client
+
+# Configure logging - this is important to see our debug messages
+logging.basicConfig(
+    level=logging.DEB,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -44,6 +55,7 @@ async def root(
             "index.html", {"request": request, "games": games}
         )
     except Exception as e:
+        logging.error(f"Error rendering dashboard: {e}", exc_info=True)
         return templates.TemplateResponse(
             "error.html",
             {
@@ -70,6 +82,7 @@ async def game_detail(
             {"request": request, "game_name": game_name, "instances": instances},
         )
     except Exception as e:
+        logging.error(f"Error rendering game detail: {e}", exc_info=True)
         return templates.TemplateResponse(
             "error.html",
             {
@@ -94,6 +107,7 @@ def start():
         host="0.0.0.0",
         port=int(os.getenv("PORT", "8000")),
         reload=os.getenv("DEBUG", "false").lower() == "true",
+        log_level="info",  # Set Uvicorn's log level to info
     )
 
 

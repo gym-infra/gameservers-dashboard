@@ -3,6 +3,7 @@ Kubernetes client implementation for interacting with the K8s API.
 """
 import logging
 import os
+import sys
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
@@ -11,6 +12,15 @@ from pydantic import BaseModel
 from kubernetes import client, config
 from kubernetes.client.api_client import ApiClient
 from kubernetes.client.exceptions import ApiException
+
+# Configure root logger to ensure our logs are displayed
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 logger = logging.getLogger(__name__)
 
@@ -355,12 +365,14 @@ def get_k8s_client_config(authorization_header: Optional[str] = None) -> ApiClie
             configuration.verify_ssl = False  # For development only, should be True in production
             
             logger.info("Using bearer token from request for Kubernetes API authentication")
+            print(f"USING BEARER TOKEN FROM REQUEST: {api_server}")
             return ApiClient(configuration)
             
         # Next try to use in-cluster configuration
         try:
             config.load_incluster_config()
             logger.info("Using in-cluster Kubernetes configuration")
+            print("USING IN-CLUSTER CONFIG")
             return ApiClient()
         except config.ConfigException:
             pass
@@ -369,15 +381,18 @@ def get_k8s_client_config(authorization_header: Optional[str] = None) -> ApiClie
         if os.path.exists(os.path.expanduser("~/.kube/config")):
             config.load_kube_config()
             logger.info("Using kubeconfig for Kubernetes configuration")
+            print("USING KUBECONFIG")
             return ApiClient()
         
         logger.error("No valid Kubernetes configuration found")
+        print("NO VALID K8S CONFIG")
         raise HTTPException(
             status_code=500,
             detail="No valid Kubernetes configuration found",
         )
     except Exception as e:
         logger.error(f"Error configuring Kubernetes client: {e}")
+        print(f"ERROR CONFIGURING K8S CLIENT: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Error configuring Kubernetes client: {str(e)}",
@@ -394,27 +409,34 @@ async def get_k8s_client(request: Request = None) -> KubernetesClient:
         KubernetesClient instance
     """
     # Log all headers to help troubleshoot OAuth proxy issues
-    logger.info("Received request with headers:")
-    for header_name, header_value in request.headers.items():
-        # Don't log the actual token value for security reasons
-        if header_name.lower() == "authorization":
-            logger.info(f"  {header_name}: Bearer [TOKEN REDACTED]")
-        else:
-            logger.info(f"  {header_name}: {header_value}")
+    print("=== DEBUGGING: REQUEST HEADERS START ===")
+    if request:
+        for header_name, header_value in request.headers.items():
+            # Don't log the actual token value for security reasons
+            if header_name.lower() == "authorization":
+                print(f"  {header_name}: Bearer [TOKEN REDACTED]")
+            else:
+                print(f"  {header_name}: {header_value}")
+    else:
+        print("  No request object provided!")
+    print("=== DEBUGGING: REQUEST HEADERS END ===")
 
     # First try standard Authorization header
-    authorization_header = request.headers.get("Authorization")
-    if not authorization_header:
-        # Try common alternative headers that might be used by proxies
-        authorization_header = request.headers.get("X-Forwarded-Authorization")
-    if not authorization_header:
-        # Check for Kubernetes specific auth header
-        authorization_header = request.headers.get("X-Auth-Token")
+    authorization_header = None
+    if request:
+        # Try standard Authorization header
+        authorization_header = request.headers.get("Authorization")
+        if not authorization_header:
+            # Try common alternative headers that might be used by proxies
+            authorization_header = request.headers.get("X-Forwarded-Authorization")
+        if not authorization_header:
+            # Check for Kubernetes specific auth header
+            authorization_header = request.headers.get("X-Auth-Token")
     
     if authorization_header:
-        logger.info("Found authorization header")
+        print(f"Found authorization header type: {authorization_header[:10]}...")
     else:
-        logger.warning("No authorization header found in the request")
+        print("No authorization header found in the request")
     
     api_client = get_k8s_client_config(authorization_header)
     return KubernetesClient(api_client=api_client)
