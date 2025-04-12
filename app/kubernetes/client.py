@@ -17,9 +17,7 @@ from kubernetes.client.exceptions import ApiException
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 
 logger = logging.getLogger(__name__)
@@ -307,10 +305,6 @@ class KubernetesClient:
             Status information about the restart operation
         """
         try:
-            # Execute kubectl rollout restart command via API
-            api_version = "apps/v1"
-            kind = "Deployment"
-            
             # Patch with restart annotation
             patch_body = {
                 "spec": {
@@ -355,18 +349,78 @@ def get_k8s_client_config(authorization_header: Optional[str] = None) -> ApiClie
     try:
         # First try to use the authorization header if provided (from OIDC proxy)
         if authorization_header and authorization_header.startswith("Bearer "):
-            token = authorization_header.split(" ", 1)[1]
+            token = authorization_header.split(" ", 1)[1].strip()
             api_server = os.environ.get("K8S_API_SERVER", "https://kubernetes.default.svc")
             
+            # Debug logging
+            print(f"DEBUG TOKEN LENGTH: {len(token)} characters")
+            print(f"DEBUG TOKEN START: {token[:5]}...")
+            print(f"DEBUG TOKEN END: ...{token[-5:]}")
+            print(f"DEBUG API SERVER: {api_server}")
+            
+            # Let's try sending the full header directly
+            print("TRYING DIRECT HEADER APPROACH")
+            # Create a configuration that sends the Authorization header verbatim
             configuration = client.Configuration()
             configuration.host = api_server
-            configuration.api_key = {"authorization": f"Bearer {token}"}
-            configuration.api_key_prefix = {"authorization": "Bearer"}
-            configuration.verify_ssl = False  # For development only, should be True in production
+            configuration.verify_ssl = False  # For development
             
-            logger.info("Using bearer token from request for Kubernetes API authentication")
-            print(f"USING BEARER TOKEN FROM REQUEST: {api_server}")
-            return ApiClient(configuration)
+            # Manually add the Authorization header to every request
+            configuration.api_key = {"authorization": authorization_header}
+            # No prefix needed since we're sending the complete header
+            configuration.api_key_prefix = {}
+            
+            api_client = ApiClient(configuration)
+            
+            # Test the connection
+            try:
+                test_api = client.CoreV1Api(api_client=api_client)
+                result = test_api.list_namespace(limit=1)
+                print("K8s connection test successful with direct header approach!")
+                print(f"Got {len(result.items)} namespaces in the test")
+                return api_client
+            except Exception as e:
+                print(f"K8s connection test failed with direct header approach: {e}")
+                
+                # Try alternative approach - explicitly formatting the token with Bearer prefix
+                print("TRYING STANDARD CLIENT APPROACH")
+                try:
+                    alt_config = client.Configuration()
+                    alt_config.host = api_server
+                    alt_config.api_key = {"authorization": f"Bearer {token}"} 
+                    alt_config.api_key_prefix = {}
+                    alt_config.verify_ssl = False
+                    
+                    alt_client = ApiClient(alt_config)
+                    alt_test_api = client.CoreV1Api(api_client=alt_client)
+                    
+                    result = alt_test_api.list_namespace(limit=1)
+                    print("K8s connection successful with standard approach!")
+                    print(f"Got {len(result.items)} namespaces in the test")
+                    return alt_client
+                except Exception as alt_e:
+                    print(f"Both approaches failed. Standard approach error: {alt_e}")
+                    
+                    # Try one more approach - directly setting the header
+                    print("TRYING RAW HEADER APPROACH")
+                    try:
+                        raw_config = client.Configuration()
+                        raw_config.host = api_server
+                        # Don't set api_key, we'll configure the header directly
+                        raw_config.verify_ssl = False
+                        
+                        # Create the client and directly set the header
+                        raw_client = ApiClient(raw_config)
+                        raw_client.default_headers["Authorization"] = f"Bearer {token}"
+                        
+                        raw_test_api = client.CoreV1Api(api_client=raw_client)
+                        result = raw_test_api.list_namespace(limit=1)
+                        print("K8s connection successful with raw header approach!")
+                        return raw_client
+                    except Exception as raw_e:
+                        print(f"All approaches failed. Raw approach error: {raw_e}")
+                        print("Will continue with the original approach despite errors")
+                        return api_client
             
         # Next try to use in-cluster configuration
         try:
@@ -375,6 +429,7 @@ def get_k8s_client_config(authorization_header: Optional[str] = None) -> ApiClie
             print("USING IN-CLUSTER CONFIG")
             return ApiClient()
         except config.ConfigException:
+            print("In-cluster config failed, trying kubeconfig")
             pass
 
         # Fall back to kubeconfig
@@ -412,11 +467,11 @@ async def get_k8s_client(request: Request = None) -> KubernetesClient:
     print("=== DEBUGGING: REQUEST HEADERS START ===")
     if request:
         for header_name, header_value in request.headers.items():
-            # Don't log the actual token value for security reasons
-            # if header_name.lower() == "authorization":
-            #     print(f"  {header_name}: Bearer [TOKEN REDACTED]")
-            # else:
-            print(f"  {header_name}: {header_value}")
+            # For security, don't log the full token
+            if header_name.lower() == "authorization":
+                print(f"  {header_name}: {header_value[:15]}...")
+            else:
+                print(f"  {header_name}: {header_value}")
     else:
         print("  No request object provided!")
     print("=== DEBUGGING: REQUEST HEADERS END ===")
