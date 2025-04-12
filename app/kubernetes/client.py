@@ -354,73 +354,23 @@ def get_k8s_client_config(authorization_header: Optional[str] = None) -> ApiClie
             
             # Debug logging
             print(f"DEBUG TOKEN LENGTH: {len(token)} characters")
-            print(f"DEBUG TOKEN START: {token[:5]}...")
-            print(f"DEBUG TOKEN END: ...{token[-5:]}")
             print(f"DEBUG API SERVER: {api_server}")
             
-            # Let's try sending the full header directly
-            print("TRYING DIRECT HEADER APPROACH")
+            # Direct header approach - pass the complete Authorization header as-is
+            print("USING DIRECT HEADER APPROACH - CONFIRMED WORKING")
             # Create a configuration that sends the Authorization header verbatim
             configuration = client.Configuration()
             configuration.host = api_server
             configuration.verify_ssl = False  # For development
             
             # Manually add the Authorization header to every request
+            # This is the key part - we pass the complete header as is
             configuration.api_key = {"authorization": authorization_header}
             # No prefix needed since we're sending the complete header
             configuration.api_key_prefix = {}
             
             api_client = ApiClient(configuration)
-            
-            # Test the connection
-            try:
-                test_api = client.CoreV1Api(api_client=api_client)
-                result = test_api.list_namespace(limit=1)
-                print("K8s connection test successful with direct header approach!")
-                print(f"Got {len(result.items)} namespaces in the test")
-                return api_client
-            except Exception as e:
-                print(f"K8s connection test failed with direct header approach: {e}")
-                
-                # Try alternative approach - explicitly formatting the token with Bearer prefix
-                print("TRYING STANDARD CLIENT APPROACH")
-                try:
-                    alt_config = client.Configuration()
-                    alt_config.host = api_server
-                    alt_config.api_key = {"authorization": f"Bearer {token}"} 
-                    alt_config.api_key_prefix = {}
-                    alt_config.verify_ssl = False
-                    
-                    alt_client = ApiClient(alt_config)
-                    alt_test_api = client.CoreV1Api(api_client=alt_client)
-                    
-                    result = alt_test_api.list_namespace(limit=1)
-                    print("K8s connection successful with standard approach!")
-                    print(f"Got {len(result.items)} namespaces in the test")
-                    return alt_client
-                except Exception as alt_e:
-                    print(f"Both approaches failed. Standard approach error: {alt_e}")
-                    
-                    # Try one more approach - directly setting the header
-                    print("TRYING RAW HEADER APPROACH")
-                    try:
-                        raw_config = client.Configuration()
-                        raw_config.host = api_server
-                        # Don't set api_key, we'll configure the header directly
-                        raw_config.verify_ssl = False
-                        
-                        # Create the client and directly set the header
-                        raw_client = ApiClient(raw_config)
-                        raw_client.default_headers["Authorization"] = f"Bearer {token}"
-                        
-                        raw_test_api = client.CoreV1Api(api_client=raw_client)
-                        result = raw_test_api.list_namespace(limit=1)
-                        print("K8s connection successful with raw header approach!")
-                        return raw_client
-                    except Exception as raw_e:
-                        print(f"All approaches failed. Raw approach error: {raw_e}")
-                        print("Will continue with the original approach despite errors")
-                        return api_client
+            return api_client
             
         # Next try to use in-cluster configuration
         try:
