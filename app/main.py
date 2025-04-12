@@ -4,16 +4,15 @@ Game Server Deployments Management Dashboard
 Main application module that initializes FastAPI and serves the web application.
 """
 import os
-from typing import Dict, Optional
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.api import router as api_router
-from app.kubernetes import KubernetesClient, get_k8s_client
+from app.kubernetes import get_k8s_client
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -34,10 +33,12 @@ app.include_router(api_router.router, prefix="/api")
 
 @app.get("/", response_class=HTMLResponse)
 async def root(
-    request: Request, k8s_client: KubernetesClient = Depends(get_k8s_client)
+    request: Request
 ):
     """Render the main dashboard page."""
     try:
+        # Create the k8s_client explicitly by passing the request
+        k8s_client = await get_k8s_client(request)
         games = await k8s_client.get_games()
         return templates.TemplateResponse(
             "index.html", {"request": request, "games": games}
@@ -58,10 +59,11 @@ async def root(
 async def game_detail(
     request: Request,
     game_name: str,
-    k8s_client: KubernetesClient = Depends(get_k8s_client),
 ):
     """Render the game detail page with instance information."""
     try:
+        # Create the k8s_client explicitly by passing the request
+        k8s_client = await get_k8s_client(request)
         instances = await k8s_client.get_game_instances(game_name)
         return templates.TemplateResponse(
             "game.html",

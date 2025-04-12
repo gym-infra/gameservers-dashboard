@@ -388,18 +388,33 @@ async def get_k8s_client(request: Request = None) -> KubernetesClient:
     """Get a configured KubernetesClient instance.
 
     Args:
-        request: Optional FastAPI request to extract authorization header
+        request: FastAPI request to extract authorization header
 
     Returns:
         KubernetesClient instance
     """
-    # Debug print the headers
-    if request:
-        logger.debug(f"Request headers: {request.headers}")
+    # Log all headers to help troubleshoot OAuth proxy issues
+    logger.info("Received request with headers:")
+    for header_name, header_value in request.headers.items():
+        # Don't log the actual token value for security reasons
+        if header_name.lower() == "authorization":
+            logger.info(f"  {header_name}: Bearer [TOKEN REDACTED]")
+        else:
+            logger.info(f"  {header_name}: {header_value}")
 
-    authorization_header = None
-    if request:
-        authorization_header = request.headers.get("Authorization")
+    # First try standard Authorization header
+    authorization_header = request.headers.get("Authorization")
+    if not authorization_header:
+        # Try common alternative headers that might be used by proxies
+        authorization_header = request.headers.get("X-Forwarded-Authorization")
+    if not authorization_header:
+        # Check for Kubernetes specific auth header
+        authorization_header = request.headers.get("X-Auth-Token")
+    
+    if authorization_header:
+        logger.info("Found authorization header")
+    else:
+        logger.warning("No authorization header found in the request")
     
     api_client = get_k8s_client_config(authorization_header)
     return KubernetesClient(api_client=api_client)

@@ -3,10 +3,10 @@ API router for the Game Server Dashboard application.
 """
 from typing import List
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel
 
-from app.kubernetes import KubernetesClient, get_k8s_client
+from app.kubernetes import get_k8s_client
 from app.kubernetes.client import DeploymentStatus, Game, GameInstance
 
 router = APIRouter(tags=["deployments"])
@@ -27,13 +27,13 @@ class DeploymentActionResponse(BaseModel):
 async def get_deployments(
     request: Request,
     namespace: str = Query(None, description="Filter deployments by namespace"),
-    k8s_client: KubernetesClient = Depends(get_k8s_client),
 ):
     """Get all game server deployments.
 
     Returns a list of all deployments with game-server annotations.
     Optionally filter by namespace.
     """
+    k8s_client = await get_k8s_client(request)
     return await k8s_client.get_deployments(namespace=namespace)
 
 
@@ -46,12 +46,12 @@ async def start_deployment(
     request: Request,
     namespace: str = Path(..., description="Namespace of the deployment"),
     name: str = Path(..., description="Name of the deployment"),
-    k8s_client: KubernetesClient = Depends(get_k8s_client),
 ):
     """Start a specific deployment (set replicas to 1).
 
     Scales the deployment to 1 replica.
     """
+    k8s_client = await get_k8s_client(request)
     result = await k8s_client.scale_deployment(namespace=namespace, name=name, replicas=1)
     return DeploymentActionResponse(status=result["status"], message=result["message"])
 
@@ -65,12 +65,12 @@ async def restart_deployment(
     request: Request,
     namespace: str = Path(..., description="Namespace of the deployment"),
     name: str = Path(..., description="Name of the deployment"),
-    k8s_client: KubernetesClient = Depends(get_k8s_client),
 ):
     """Restart a specific deployment.
 
     Executes a rollout restart on the specified deployment.
     """
+    k8s_client = await get_k8s_client(request)
     result = await k8s_client.restart_deployment(namespace=namespace, name=name)
     return DeploymentActionResponse(status=result["status"], message=result["message"])
 
@@ -84,12 +84,12 @@ async def stop_deployment(
     request: Request,
     namespace: str = Path(..., description="Namespace of the deployment"),
     name: str = Path(..., description="Name of the deployment"),
-    k8s_client: KubernetesClient = Depends(get_k8s_client),
 ):
     """Stop a specific deployment (set replicas to 0).
 
     Scales the deployment to 0 replicas.
     """
+    k8s_client = await get_k8s_client(request)
     result = await k8s_client.scale_deployment(namespace=namespace, name=name, replicas=0)
     return DeploymentActionResponse(status=result["status"], message=result["message"])
 
@@ -101,12 +101,12 @@ async def stop_deployment(
 )
 async def get_games(
     request: Request,
-    k8s_client: KubernetesClient = Depends(get_k8s_client),
 ):
     """Get a list of all games.
 
     Returns a list of all games with their instance and component counts.
     """
+    k8s_client = await get_k8s_client(request)
     return await k8s_client.get_games()
 
 
@@ -118,10 +118,10 @@ async def get_games(
 async def get_game_instances(
     request: Request,
     game_name: str = Path(..., description="Name of the game"),
-    k8s_client: KubernetesClient = Depends(get_k8s_client),
 ):
     """Get all instances for a specific game.
 
     Returns a list of all instances with their component deployments.
     """
+    k8s_client = await get_k8s_client(request)
     return await k8s_client.get_game_instances(game_name=game_name)
