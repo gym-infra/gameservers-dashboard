@@ -105,11 +105,8 @@ class KubernetesClient:
         """
         try:
             # Check if we have a namespace specified in the environment (for testing)
-            env_namespace = os.environ.get("NAMESPACE")
             if namespace:
                 response = self.apps_v1_api.list_namespaced_deployment(namespace=namespace)
-            elif env_namespace:
-                response = self.apps_v1_api.list_namespaced_deployment(namespace=env_namespace)
             else:
                 response = self.apps_v1_api.list_deployment_for_all_namespaces()
 
