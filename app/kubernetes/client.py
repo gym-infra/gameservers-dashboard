@@ -413,10 +413,10 @@ async def get_k8s_client(request: Request = None) -> KubernetesClient:
     if request:
         for header_name, header_value in request.headers.items():
             # Don't log the actual token value for security reasons
-            if header_name.lower() == "authorization":
-                print(f"  {header_name}: Bearer [TOKEN REDACTED]")
-            else:
-                print(f"  {header_name}: {header_value}")
+            # if header_name.lower() == "authorization":
+            #     print(f"  {header_name}: Bearer [TOKEN REDACTED]")
+            # else:
+            print(f"  {header_name}: {header_value}")
     else:
         print("  No request object provided!")
     print("=== DEBUGGING: REQUEST HEADERS END ===")
