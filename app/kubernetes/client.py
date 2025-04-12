@@ -352,7 +352,7 @@ def get_k8s_client_config(authorization_header: Optional[str] = None) -> ApiClie
             configuration.host = api_server
             configuration.api_key = {"authorization": f"Bearer {token}"}
             configuration.api_key_prefix = {"authorization": "Bearer"}
-            configuration.verify_ssl = False  # For development only, should be True in production
+            configuration.verify_ssl = True  # For development only, should be True in production
             
             logger.info("Using bearer token from request for Kubernetes API authentication")
             return ApiClient(configuration)
@@ -393,6 +393,10 @@ async def get_k8s_client(request: Request = None) -> KubernetesClient:
     Returns:
         KubernetesClient instance
     """
+    # Debug print the headers
+    if request:
+        logger.debug(f"Request headers: {request.headers}")
+
     authorization_header = None
     if request:
         authorization_header = request.headers.get("Authorization")
