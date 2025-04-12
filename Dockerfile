@@ -20,13 +20,13 @@ RUN curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl" \
     && mv kubectl /usr/local/bin/
 
 # Install uv for dependency management
-RUN curl -sSf https://astral.sh/uv/install.sh | sh
+RUN pip install --no-cache-dir uv
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
 # Install Python dependencies
-RUN /root/.cargo/bin/uv install
+RUN uv install
 
 # Copy application code
 COPY . .
