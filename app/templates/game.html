@@ -60,38 +60,6 @@
                                 <span class="badge bg-danger">Failed</span>
                                 {% endif %}
                             </div>
-                            {% if component.conditions %}
-                            <div class="conditions-container">
-                                <button class="btn btn-sm btn-link p-0 mt-1" 
-                                        type="button" 
-                                        data-bs-toggle="collapse" 
-                                        data-bs-target="#conditions-{{ component.namespace }}-{{ component.name }}" 
-                                        aria-expanded="false">
-                                    View conditions
-                                </button>
-                                <div class="collapse mt-2 conditions-collapse" id="conditions-{{ component.namespace }}-{{ component.name }}">
-                                    <div class="card card-body p-3">
-                                        <div class="conditions-header">
-                                            <h6>{{ component.component }} Conditions</h6>
-                                            <button type="button" class="conditions-close" 
-                                                    data-bs-toggle="collapse" 
-                                                    data-bs-target="#conditions-{{ component.namespace }}-{{ component.name }}" 
-                                                    aria-label="Close">×</button>
-                                        </div>
-                                        <ul class="list-unstyled mb-0 small">
-                                        {% for condition in component.conditions %}
-                                            <li class="mb-2">
-                                                <div><strong>{{ condition.type }}</strong>: {{ condition.status }}</div>
-                                                {% if condition.message %}
-                                                <div class="text-muted">{{ condition.message }}</div>
-                                                {% endif %}
-                                            </li>
-                                        {% endfor %}
-                                        </ul>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
                         </td>
                         <td>
                             <div class="resource-usage">
@@ -184,25 +152,6 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Handle condition buttons
-    document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(button => {
-        button.addEventListener('click', function() {
-            const targetId = this.getAttribute('data-bs-target');
-            const targetElement = document.querySelector(targetId);
-            
-            // Position the popup near the button that was clicked
-            if (targetElement) {
-                // Get button position
-                const rect = this.getBoundingClientRect();
-                const popupTop = rect.bottom + window.scrollY + 5; // 5px below the button
-                const popupLeft = rect.left + window.scrollX;
-                
-                // Set the position
-                targetElement.style.top = popupTop + 'px';
-                targetElement.style.left = popupLeft + 'px';
-            }
-        });
-    });
 
     // Handle start buttons
     document.querySelectorAll('.start-deployment').forEach(button => {
