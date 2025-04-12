@@ -107,8 +107,10 @@ class KubernetesClient:
             # Check if we have a namespace specified in the environment (for testing)
             if namespace:
                 response = self.apps_v1_api.list_namespaced_deployment(namespace=namespace)
+                print(f"DEBUG: Found {len(response.items)} deployments in namespace {namespace}")
             else:
                 response = self.apps_v1_api.list_deployment_for_all_namespaces()
+                print(f"DEBUG: Found {len(response.items)} deployments in all namespaces")
 
             deployments = []
             for item in response.items:
