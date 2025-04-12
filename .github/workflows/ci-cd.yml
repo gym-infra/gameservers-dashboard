@@ -54,6 +54,38 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      
+      - name: Make image public
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Making container image public..."
+          
+          # Install GitHub CLI
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh
+          
+          # Extract image name without registry
+          IMAGE="${{ env.IMAGE_NAME }}"
+          IMAGE_WITHOUT_OWNER=$(echo $IMAGE | cut -d '/' -f 2)
+          
+          # Get all tags that were just pushed
+          for TAG in $(echo "${{ steps.meta.outputs.tags }}" | tr '\n' ' '); do
+            echo "Processing tag: $TAG"
+            # Extract package version from tag
+            VERSION=$(echo $TAG | awk -F: '{print $2}')
+            
+            # Make the package public using GitHub CLI
+            echo "Setting package visibility to public for version $VERSION"
+            gh api \
+              --method PATCH \
+              -H "Accept: application/vnd.github+json" \
+              "/user/packages/container/${IMAGE_WITHOUT_OWNER}/versions/${VERSION}" \
+              -f visibility='public'
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   update-helm-chart:
     name: Update Helm Chart
