@@ -202,6 +202,99 @@ class KubernetesClient:
             logger.error(f"Error fetching pod metrics: {e}")
             return {}
 
+    async def _get_accessible_namespaces(self) -> List[str]:
+        """Get a list of namespaces the current user can access.
+        
+        Returns:
+            List of namespace names
+        """
+        try:
+            namespaces = self.core_v1_api.list_namespace()
+            accessible_namespaces = []
+            
+            for ns in namespaces.items:
+                try:
+                    # Try a simple operation to check if user can access this namespace
+                    self.apps_v1_api.list_namespaced_deployment(namespace=ns.metadata.name, limit=1)
+                    accessible_namespaces.append(ns.metadata.name)
+                except ApiException as e:
+                    if e.status == 403:  # Forbidden
+                        # Skip namespaces the user can't access
+                        continue
+                    else:
+                        # Re-raise other errors
+                        raise
+                        
+            print(f"DEBUG: Found {len(accessible_namespaces)} accessible namespaces: {accessible_namespaces}")
+            return accessible_namespaces
+        except ApiException as e:
+            logger.warning(f"Cannot list namespaces, will use default namespace only: {e}")
+            return ["default"]
+
+    async def _process_deployment_item(self, item) -> Optional[DeploymentStatus]:
+        """Process a single deployment item to create a DeploymentStatus object.
+        
+        Args:
+            item: Kubernetes deployment object
+            
+        Returns:
+            DeploymentStatus object or None if not a game server deployment
+        """
+        # Check if the deployment has our game annotations
+        annotations = item.metadata.annotations or {}
+        game = annotations.get(GAME_ANNOTATION)
+        
+        if not game:
+            return None  # Skip deployments without our game annotation
+            
+        instance = annotations.get(INSTANCE_ANNOTATION, "unknown")
+        component = annotations.get(COMPONENT_ANNOTATION, "unknown")
+        
+        # Get deployment status
+        available_replicas = item.status.available_replicas or 0
+        unavailable_replicas = item.status.unavailable_replicas or 0
+        
+        # Determine if the deployment is active or failed
+        if (
+            item.spec.replicas == 0 
+            or (item.status.available_replicas is not None 
+                and item.status.available_replicas > 0)
+        ):
+            status = "active"
+        else:
+            status = "failed"
+        
+        # Extract conditions
+        conditions = []
+        if item.status.conditions:
+            for condition in item.status.conditions:
+                conditions.append({
+                    "type": condition.type,
+                    "status": condition.status,
+                    "message": condition.message,
+                    "last_transition_time": condition.last_transition_time.isoformat()
+                    if condition.last_transition_time else None,
+                })
+        
+        # Store the selector for fetching pod metrics
+        selector_labels = {}
+        if item.spec.selector and item.spec.selector.match_labels:
+            selector_labels = item.spec.selector.match_labels
+        
+        return DeploymentStatus(
+            name=item.metadata.name,
+            namespace=item.metadata.namespace,
+            game=game,
+            instance=instance,
+            component=component,
+            replicas=item.spec.replicas,
+            available_replicas=available_replicas,
+            unavailable_replicas=unavailable_replicas,
+            status=status,
+            conditions=conditions,
+            selector_labels=selector_labels
+        )
+
     async def _fetch_deployments(self, namespace: Optional[str] = None) -> List[DeploymentStatus]:
         """Get all game server deployments from the Kubernetes API without metrics.
         
@@ -214,72 +307,59 @@ class KubernetesClient:
             List of deployment status objects
         """
         try:
-            # Check if we have a namespace specified in the environment (for testing)
-            if namespace:
-                response = self.apps_v1_api.list_namespaced_deployment(namespace=namespace)
-                print(f"DEBUG: Found {len(response.items)} deployments in namespace {namespace}")
-            else:
-                response = self.apps_v1_api.list_deployment_for_all_namespaces()
-                print(f"DEBUG: Found {len(response.items)} deployments in all namespaces")
-
             deployments = []
-            for item in response.items:
-                # Check if the deployment has our game annotations
-                annotations = item.metadata.annotations or {}
-                game = annotations.get(GAME_ANNOTATION)
-                
-                if not game:
-                    continue  # Skip deployments without our game annotation
+            
+            # If specific namespace is provided, only query that one
+            if namespace:
+                try:
+                    response = self.apps_v1_api.list_namespaced_deployment(namespace=namespace)
+                    print(f"DEBUG: Found {len(response.items)} deployments in namespace {namespace}")
                     
-                instance = annotations.get(INSTANCE_ANNOTATION, "unknown")
-                component = annotations.get(COMPONENT_ANNOTATION, "unknown")
-                
-                # Get deployment status
-                available_replicas = item.status.available_replicas or 0
-                unavailable_replicas = item.status.unavailable_replicas or 0
-                
-                # Determine if the deployment is active or failed
-                if (
-                    item.spec.replicas == 0 
-                    or (item.status.available_replicas is not None 
-                        and item.status.available_replicas > 0)
-                ):
-                    status = "active"
-                else:
-                    status = "failed"
-                
-                # Extract conditions
-                conditions = []
-                if item.status.conditions:
-                    for condition in item.status.conditions:
-                        conditions.append({
-                            "type": condition.type,
-                            "status": condition.status,
-                            "message": condition.message,
-                            "last_transition_time": condition.last_transition_time.isoformat()
-                            if condition.last_transition_time else None,
-                        })
-                
-                # Store the selector for fetching pod metrics
-                selector_labels = {}
-                if item.spec.selector and item.spec.selector.match_labels:
-                    selector_labels = item.spec.selector.match_labels
-                
-                deployments.append(
-                    DeploymentStatus(
-                        name=item.metadata.name,
-                        namespace=item.metadata.namespace,
-                        game=game,
-                        instance=instance,
-                        component=component,
-                        replicas=item.spec.replicas,
-                        available_replicas=available_replicas,
-                        unavailable_replicas=unavailable_replicas,
-                        status=status,
-                        conditions=conditions,
-                        selector_labels=selector_labels
-                    )
-                )
+                    # Process each deployment
+                    for item in response.items:
+                        deployment = await self._process_deployment_item(item)
+                        if deployment:
+                            deployments.append(deployment)
+                            
+                except ApiException as e:
+                    logger.error(f"Error retrieving deployments from namespace {namespace}: {e}")
+                    # Just log the error and return empty list rather than failing completely
+                    return []
+            else:
+                # Try to query all namespaces first (cluster-level access)
+                try:
+                    response = self.apps_v1_api.list_deployment_for_all_namespaces()
+                    print(f"DEBUG: Found {len(response.items)} deployments in all namespaces")
+                    
+                    # Process each deployment
+                    for item in response.items:
+                        deployment = await self._process_deployment_item(item)
+                        if deployment:
+                            deployments.append(deployment)
+                except ApiException as e:
+                    if e.status == 403:  # Forbidden - user doesn't have cluster-level access
+                        print("DEBUG: Cannot list deployments at cluster scope, falling back to namespace-level queries")
+                        
+                        # Get namespaces the user can access
+                        namespaces = await self._get_accessible_namespaces()
+                        
+                        # Query each namespace individually
+                        for ns in namespaces:
+                            try:
+                                response = self.apps_v1_api.list_namespaced_deployment(namespace=ns)
+                                print(f"DEBUG: Found {len(response.items)} deployments in namespace {ns}")
+                                
+                                # Process each deployment
+                                for item in response.items:
+                                    deployment = await self._process_deployment_item(item)
+                                    if deployment:
+                                        deployments.append(deployment)
+                            except ApiException as ns_error:
+                                # Log the error but continue with other namespaces
+                                logger.warning(f"Error retrieving deployments from namespace {ns}: {ns_error}")
+                    else:
+                        # For other errors, raise the exception
+                        raise e
             
             return deployments
         except ApiException as e:
