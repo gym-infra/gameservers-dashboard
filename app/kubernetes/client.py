@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 GAME_ANNOTATION = "game-server/game"
 INSTANCE_ANNOTATION = "game-server/instance"
 COMPONENT_ANNOTATION = "game-server/component"
+FILES_URL_ANNOTATION = "game-server/files-url"
 
 
 class DeploymentStatus(BaseModel):
@@ -46,6 +47,8 @@ class DeploymentStatus(BaseModel):
     memory_usage: Optional[str] = None
     # Store the deployment's selector labels for pod metrics queries
     selector_labels: Dict[str, str] = {}
+    # Files URL for accessing related files
+    files_url: Optional[str] = None
 
 
 class GameInstance(BaseModel):
@@ -281,6 +284,9 @@ class KubernetesClient:
         if item.spec.selector and item.spec.selector.match_labels:
             selector_labels = item.spec.selector.match_labels
         
+        # Extract files URL annotation if it exists
+        files_url = annotations.get(FILES_URL_ANNOTATION)
+        
         return DeploymentStatus(
             name=item.metadata.name,
             namespace=item.metadata.namespace,
@@ -292,7 +298,8 @@ class KubernetesClient:
             unavailable_replicas=unavailable_replicas,
             status=status,
             conditions=conditions,
-            selector_labels=selector_labels
+            selector_labels=selector_labels,
+            files_url=files_url
         )
 
     async def _fetch_deployments(self, namespace: Optional[str] = None) -> List[DeploymentStatus]:
@@ -653,13 +660,21 @@ class KubernetesClient:
                 # Get creation timestamp
                 created_at = pod.metadata.creation_timestamp
                 
+                # Get annotations including the default container if it exists
+                annotations = {}
+                if pod.metadata.annotations:
+                    annotations = pod.metadata.annotations
+                    
                 result.append({
                     "name": pod.metadata.name,
                     "namespace": pod.metadata.namespace,
                     "status": status,
                     "created_at": created_at.isoformat() if created_at else None,
-                    "containers": containers
+                    "containers": containers,
+                    "annotations": annotations
                 })
+
+                print(f"DEBUG: Found pod {pod.metadata.name} with status {status} in {namespace}/{name}: {result[-1]}")
                 
             # Sort by creation time (newest first)
             result.sort(key=lambda p: p.get("created_at", ""), reverse=True)
@@ -679,19 +694,45 @@ class KubernetesClient:
         Args:
             namespace: Namespace of the pod
             pod_name: Name of the pod
-            container: Optional container name (if not provided, logs from the first container)
+            container: Optional container name (if not provided, use default-container annotation or first container)
             tail_lines: Number of lines to fetch from the end of the logs
             
         Returns:
             Pod logs as a string
         """
         try:
-            logs = self.core_v1_api.read_namespaced_pod_log(
-                name=pod_name,
-                namespace=namespace,
-                container=container,
-                tail_lines=tail_lines
-            )
+            # If no container specified, check for default container annotation
+            if not container:
+                try:
+                    pod = self.core_v1_api.read_namespaced_pod(
+                        name=pod_name, 
+                        namespace=namespace
+                    )
+                    
+                    # Check for the default container annotation
+                    if pod.metadata.annotations and "kubectl.kubernetes.io/default-container" in pod.metadata.annotations:
+                        container = pod.metadata.annotations["kubectl.kubernetes.io/default-container"]
+                        print(f"Using default container '{container}' from annotation")
+                except Exception as e:
+                    logger.warning(f"Error checking default container annotation: {e}")
+            
+            # Now get the logs
+            if container:
+                print(f"Getting logs for pod {namespace}/{pod_name}, container: {container}")
+                logs = self.core_v1_api.read_namespaced_pod_log(
+                    name=pod_name,
+                    namespace=namespace,
+                    container=container,
+                    tail_lines=tail_lines,
+                    pretty=True,
+                )
+            else:
+                print(f"Getting logs for pod {namespace}/{pod_name}, no container specified")
+                logs = self.core_v1_api.read_namespaced_pod_log(
+                    name=pod_name,
+                    namespace=namespace,
+                    tail_lines=tail_lines
+                )
             
             return logs
         except ApiException as e:
